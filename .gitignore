@@ -1,0 +1,32 @@
+# Compiled LaTeX
+*.aux
+*.log
+*.out
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Submission packages (keep in repo for reproducibility)
+# submission/
+
+# Temp
+/tmp/
+arxiv_submission/

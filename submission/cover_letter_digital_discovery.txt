@@ -1,0 +1,26 @@
+Dear Editors of Digital Discovery,
+
+We are pleased to submit our manuscript entitled "UMN: Universe Multi Neural Network for Olfactory Mixture Similarity Prediction via Differentiable N-body Simulation" for consideration as a Full Paper in Digital Discovery.
+
+This work introduces a novel physics-simulation-based deep learning architecture for predicting perceptual similarity between olfactory mixtures. Unlike existing approaches based on hand-crafted descriptors or graph neural networks, UMN maps molecular fingerprints to celestial bodies with learnable physical quantities and performs differentiable N-body gravitational simulation to extract mixture-level representations. This represents a fundamentally new paradigm for molecular mixture modeling that bridges physics simulation and machine learning.
+
+Key contributions of this work include:
+
+1. A differentiable N-body gravitational simulation architecture for molecular mixture representation learning, achieving Pearson r = 0.780 on the Snitz mixture similarity benchmark without manual feature engineering.
+
+2. Systematic empirical analysis across 9 model versions demonstrating that physics engine simplicity, multi-restart optimization, and small-data-appropriate training strategies are critical design principles.
+
+3. Post-hoc interpretability analysis revealing statistically significant correlations between learned physical quantities and molecular properties (LogP, HBA), positioned within the broader GNN interpretability literature.
+
+4. Comprehensive generalization analysis including zero-shot transfer experiments and overfitting diagnostics, providing transparent assessment of model limitations.
+
+We believe this work aligns well with Digital Discovery's mission of publishing innovative computational approaches that advance chemical science through AI and machine learning. The source code and data are publicly available at https://github.com/junseong2im/Perfume-Ai.
+
+This manuscript has not been published or submitted elsewhere for publication, and all authors have approved its submission. A preprint version has been deposited on ChemRxiv.
+
+We look forward to your consideration.
+
+Sincerely,
+Junseong Kim
+University of Suwon
+junseong2im@gmail.com
