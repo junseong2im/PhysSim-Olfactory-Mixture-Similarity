@@ -68,29 +68,29 @@ For a mixture of m molecules, this produces a tensor C in R^(m x 128) with an as
 
 #### 3.4.1 ConstellationToCelestial Mapping
 
-Each atom vector c_i in R^128 is mapped to physical quantities through a single linear layer W in R^(128 x 7):
+Each atom vector c_i in R^128 is mapped to physical quantities through three separate linear projections:
 
-[m_i, p_i, v_i] = W * c_i
+m_i = clamp(softplus(W_m * c_i + b_m), max=5.0)    where W_m in R^(128 x 1)
+p_i = 2.0 * tanh(W_p * c_i + b_p)                   where W_p in R^(128 x 3)
+v_i = 0.5 * tanh(W_v * c_i + b_v)                   where W_v in R^(128 x 3)
 
-where m_i in R^1 is mass, p_i in R^3 is position, and v_i in R^3 is velocity. Post-processing ensures physical validity:
+where m_i in R^1 is mass (strictly positive via Softplus and bounded by clamp), p_i in R^3 is position (bounded to [-2, 2]), and v_i in R^3 is velocity (bounded to [-0.5, 0.5]).
 
-m_i = clamp(softplus(m_i), max=5.0)
-p_i = 2.0 * tanh(p_i)
-v_i = 0.5 * tanh(v_i)
-
-We note that this mapping is deliberately kept as a single linear layer. Experiments with multi-layer perceptrons (Section 5.4) showed that nonlinear mappings degrade performance, likely because the linear layer preserves clean gradient flow through the subsequent simulation.
+We note that each projection is deliberately kept as a single linear layer. Experiments with multi-layer perceptrons (Section 5.4) showed that nonlinear mappings degrade performance, likely because linear projections preserve clean gradient flow through the subsequent simulation.
 
 #### 3.4.2 GravitationalEngine
 
 The engine performs T-step N-body simulation using Verlet integration with differentiable operations. At each time step t:
 
-a_i(t) = G * sum_{j != i} [ m_j * (r_j(t) - r_i(t)) / (||r_j(t) - r_i(t)||^2 + epsilon)^(3/2) ]
+d_ij = ||r_j(t) - r_i(t)||,  clamped to d_ij >= epsilon
+
+a_i(t) = G * sum_{j != i} [ m_j * (r_j(t) - r_i(t)) / d_ij^3 ]
 
 v_i(t+1) = v_i(t) + clamp(a_i(t), -100, 100) * dt
 
 r_i(t+1) = r_i(t) + v_i(t+1) * dt
 
-where G = exp(log_G) is a learnable gravitational constant (log_G is an nn.Parameter), epsilon = 0.01 is a softening parameter preventing singularities, and dt = 0.05 is the time step. The trajectory tensor H in R^(B x T x N x 3) records all positions across time steps.
+where G = clamp(exp(log_G), 0.01, 10.0) is a learnable gravitational constant (log_G is an nn.Parameter), epsilon = 1e-4 is a distance clamping threshold preventing singularities, and dt = 0.05 is the time step. The trajectory tensor H in R^(B x T x N x 3) records all positions across time steps.
 
 Mass decay is applied at each step to prevent numerical instability in long simulations. The optimal simulation length was found to be T = 4 steps; longer simulations (T >= 8) increase numerical instability and degrade performance (Section 5.5).
 
