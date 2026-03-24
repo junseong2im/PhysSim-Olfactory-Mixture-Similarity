@@ -1,0 +1,109 @@
+{
+  "transfer_results": [
+    {
+      "seed": 42,
+      "fold": 0,
+      "val_r": 0.7435,
+      "transfer_r": -0.1998
+    },
+    {
+      "seed": 42,
+      "fold": 1,
+      "val_r": 0.8324,
+      "transfer_r": -0.016
+    },
+    {
+      "seed": 42,
+      "fold": 2,
+      "val_r": 0.7095,
+      "transfer_r": 0.0303
+    },
+    {
+      "seed": 42,
+      "fold": 3,
+      "val_r": 0.7794,
+      "transfer_r": -0.1084
+    },
+    {
+      "seed": 42,
+      "fold": 4,
+      "val_r": 0.8211,
+      "transfer_r": 0.1728
+    },
+    {
+      "seed": 123,
+      "fold": 0,
+      "val_r": 0.8413,
+      "transfer_r": -0.262
+    },
+    {
+      "seed": 123,
+      "fold": 1,
+      "val_r": 0.7657,
+      "transfer_r": 0.1021
+    },
+    {
+      "seed": 123,
+      "fold": 2,
+      "val_r": 0.7429,
+      "transfer_r": -0.1278
+    },
+    {
+      "seed": 123,
+      "fold": 3,
+      "val_r": 0.7912,
+      "transfer_r": 0.0297
+    },
+    {
+      "seed": 123,
+      "fold": 4,
+      "val_r": 0.7198,
+      "transfer_r": -0.1028
+    },
+    {
+      "seed": 456,
+      "fold": 0,
+      "val_r": 0.7781,
+      "transfer_r": 0.0115
+    },
+    {
+      "seed": 456,
+      "fold": 1,
+      "val_r": 0.7106,
+      "transfer_r": -0.0538
+    },
+    {
+      "seed": 456,
+      "fold": 2,
+      "val_r": 0.7597,
+      "transfer_r": -0.3875
+    },
+    {
+      "seed": 456,
+      "fold": 3,
+      "val_r": 0.8129,
+      "transfer_r": -0.0398
+    },
+    {
+      "seed": 456,
+      "fold": 4,
+      "val_r": 0.8078,
+      "transfer_r": -0.0506
+    }
+  ],
+  "summary": {
+    "val_r_mean": 0.7744,
+    "val_r_std": 0.042,
+    "transfer_r_mean": -0.0668,
+    "transfer_r_std": 0.1366
+  },
+  "overfitting_evidence": {
+    "cv_coefficient_of_variation": 5.1,
+    "fold_iqr": [
+      0.7599557144486138,
+      0.8076136353801918
+    ],
+    "physics_engine_params": 911,
+    "physics_engine_param_ratio": 0.003
+  }
+}

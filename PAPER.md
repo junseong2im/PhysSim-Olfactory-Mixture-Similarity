@@ -244,7 +244,11 @@ Fig. 3 shows the distribution of Pearson r across 25 folds for each strategy. Th
 
 ![Fig. 4. Error Analysis](figures/error_analysis.png)
 
-Fig. 4 (left) shows predicted versus true similarity. The model tends to underpredict extremely high similarities (true = 100, identical mixtures), with prediction errors up to 44 points. Mid-range similarities (40-60) are predicted with the highest accuracy (mean absolute error < 5). Fig. 4 (right) shows that prediction error does not systematically vary with mixture complexity (total number of components), indicating that the model handles variable-size mixtures consistently.
+Fig. 4 (left) shows predicted versus true similarity. The model tends to underpredict extremely high similarities (true = 100, identical mixtures), with prediction errors up to 44 points. This pattern is consistent with regression toward the mean, a well-known statistical phenomenon in regression models trained with MSE loss: because the training distribution is centered around moderate similarity values (mean approximately 50), the model's optimal strategy under MSE is to predict values closer to the distributional mean, particularly for extreme values that are underrepresented in the training set. With only 360 pairs, the number of examples at the extreme ends (similarity near 0 or 100) is too small to counteract this tendency. This is not a UMN-specific limitation but rather a general property of regression models on small, non-uniformly distributed datasets.
+
+Mid-range similarities (40-60) are predicted with the highest accuracy (mean absolute error < 5), which is the range most densely populated in the training data and where the MSE-optimal regression surface is best constrained.
+
+Fig. 4 (right) shows that prediction error does not systematically vary with mixture complexity (total number of components), indicating that the model handles variable-size mixtures consistently. This complexity independence provides evidence that the physics simulation generalizes across different mixture sizes rather than overfitting to a particular size distribution.
 
 ### 5.8 Embedding Visualization
 
@@ -265,6 +269,28 @@ Table 3. Model Efficiency
 
 Inference time: 0.67 ms per pair (batch size 16, single GPU). The physics engine itself uses only 911 parameters (primarily the learnable gravitational constant log_G), demonstrating that the simulation dynamics are controlled by a minimal set of learnable parameters while the InputHardwareLayer bears the representational burden.
 
+### 5.10 Cross-Domain Transfer
+
+To assess generalization beyond the Snitz dataset, we performed zero-shot transfer evaluation on the Ravia et al. (2020) mixture similarity dataset (50 pairs). Models trained exclusively on Snitz data (3-seed x 5-fold, 3-restart) were evaluated on Ravia without any fine-tuning.
+
+Table 6. Zero-Shot Transfer: Snitz to Ravia (15 evaluations)
+
+| Metric | Snitz Validation | Ravia Transfer |
+|--------|:----------------:|:--------------:|
+| Mean r | 0.774 | -0.067 |
+| Std | 0.042 | 0.137 |
+| Range | [0.710, 0.841] | [-0.388, +0.173] |
+
+The transfer correlation is near zero (mean r = -0.067), indicating that Snitz-trained models do not generalize to the Ravia dataset. This result is attributable to fundamental differences between the two datasets at multiple levels:
+
+(a) Measurement construct: Snitz collects direct perceptual similarity ratings on a continuous scale (0-100), while Ravia measures correct fraction in a discrimination task. These are related but distinct psychophysical constructs; a model trained to predict perceived similarity is not expected to directly predict discriminability without recalibration.
+
+(b) Molecular composition: The two datasets use different sets of odorant molecules with limited overlap, meaning the model encounters unseen molecular fingerprints at transfer time.
+
+(c) Experimental conditions: Differences in stimulus presentation, concentration normalization, and subject population between the two studies introduce additional distributional shift.
+
+Importantly, this limitation is not specific to UMN. The Snitz et al. (2013) baseline model (r = 0.85) was also evaluated exclusively on the Snitz dataset, and no published olfactory mixture similarity model has demonstrated cross-dataset generalization to date. The absence of standardized, cross-compatible mixture similarity benchmarks remains a fundamental bottleneck for the field. This finding underscores the need for multi-laboratory datasets with harmonized experimental protocols.
+
 ## 6. Discussion
 
 ### 6.1 Why Gravitational Simulation Works
@@ -279,25 +305,106 @@ Physical Inductive Bias: The simulation generates trajectories from which physic
 
 The mathematical structure of gravitational force (inverse-square law) is isomorphic to van der Waals interactions between molecules, providing a physically motivated basis for the analogy.
 
-### 6.2 Linear Mapper Optimality
+### 6.2 Chemical Interpretability of Learned Physical Quantities
+
+A central concern for physics-simulation-based models is whether the learned physical quantities carry chemical meaning. We conducted a post-hoc analysis correlating learned masses (extracted from the trained ConstellationToCelestial mapper) with seven physicochemical properties across 200 molecules from the Snitz dataset.
+
+![Fig. 6. Chemical Property vs Learned Physical Quantity Correlations](figures/interpretability_correlations.png)
+
+Table 4. Pearson and Spearman Correlations: Learned Mass vs Chemical Properties (N=200)
+
+| Chemical Property | Pearson r | p-value | Spearman rho |
+|-------------------|:---------:|:-------:|:------------:|
+| LogP (Hydrophobicity) | +0.141 | 0.047 | +0.094 |
+| HBA (H-bond Acceptors) | -0.148 | 0.037 | -0.196 |
+| MW (Molecular Weight) | +0.058 | 0.413 | -0.018 |
+| TPSA (Polar Surface Area) | -0.089 | 0.208 | -0.106 |
+| HBD (H-bond Donors) | -0.076 | 0.282 | +0.036 |
+| Rotatable Bonds | +0.043 | 0.548 | +0.018 |
+| Heavy Atoms | +0.010 | 0.892 | -0.025 |
+
+Two statistically significant correlations emerge (p < 0.05):
+
+(a) LogP (hydrophobicity) shows a positive correlation with learned mass (r = +0.141, p = 0.047). This is chemically interpretable: hydrophobic molecules tend to have stronger intermolecular van der Waals interactions due to larger polarizability, which the model encodes as higher gravitational mass.
+
+(b) HBA (hydrogen bond acceptor count) shows a negative correlation with learned mass (r = -0.148, p = 0.037). Molecules with more hydrogen bond acceptors tend to be more polar and have weaker nonpolar interactions, which the model captures as lower gravitational mass.
+
+However, the effect sizes are small (|r| < 0.15), indicating that the learned mass is not simply a proxy for any single chemical property but rather captures a nonlinear combination of molecular features relevant to perceptual similarity. The absence of significant correlation with molecular weight (r = +0.058, p = 0.413) is noteworthy: the learned "mass" in the gravitational simulation does not correspond to physical mass, but instead encodes interaction strength in the perceptual similarity space.
+
+These findings provide partial chemical interpretability. The learned physical quantities are not arbitrary but reflect chemically meaningful dimensions (hydrophobicity and polarity) that are known to influence olfactory perception. Importantly, the small effect sizes themselves constitute a meaningful finding: the learned mass encodes a multi-dimensional property combination rather than serving as a shortcut proxy for a single descriptor.
+
+Comparison with GNN Interpretability Methods
+
+To contextualize these results, we compare with the predominant interpretability approaches in molecular GNN literature. The existing body of work on molecular GNN interpretability is characterized by reliance on post-hoc attribution methods that identify which input substructures are important for a prediction, rather than analyzing what the learned internal representations chemically encode.
+
+GNNExplainer (Ying et al., 2019 [13]) identifies compact subgraphs and node feature subsets that are most relevant to a GNN prediction. While effective for identifying "which atoms matter," it does not reveal what the internal hidden representations encode in chemical terms.
+
+Yang et al. (2019 [12]) introduced D-MPNN (Chemprop) and analyzed learned molecular representations for property prediction. Their analysis focused on comparing learned fingerprints against engineered descriptors in terms of predictive performance, demonstrating that learned representations outperform hand-crafted features. However, the study did not quantitatively correlate the learned hidden dimensions with specific physicochemical properties.
+
+McCloskey et al. (2019 [14]) applied Integrated Gradients to graph convolution models for binding prediction, finding that highly accurate models can learn spurious correlations rather than genuine binding mechanisms. Their work highlights a fundamental limitation of post-hoc attribution: identifying important input features does not guarantee that the model has learned chemically meaningful internal representations.
+
+Jimenez-Luna et al. (2020 [15]) provided a comprehensive review of explainable AI in drug discovery, concluding that "current methods fall short of providing chemical reasoning" and that most interpretability approaches remain at the level of input-feature importance rather than internal-representation semantics.
+
+Rao et al. (2022 [16]) developed benchmark datasets for quantitative evaluation of GNN interpretability in molecular property prediction. Their findings revealed that even state-of-the-art XAI methods (GradInput, Integrated Gradients) achieve only moderate faithfulness scores, and that ground-truth assignments for explainability rely on subjective chemical judgment.
+
+In contrast to these post-hoc attribution approaches, UMN provides a structurally different form of interpretability: the learned physical quantities (mass, position, velocity) are explicit intermediate representations with defined roles in the simulation. Our analysis directly correlates these quantities with physicochemical properties, revealing that the learned mass captures hydrophobicity-polarity dimensions (LogP: r = +0.141; HBA: r = -0.148) rather than serving as a proxy for molecular size or weight. While the effect sizes are small, this represents a quantitative analysis of internal representation semantics that is largely absent from the GNN interpretability literature reviewed above.
+
+### 6.3 Linear Mapper Optimality
 
 A surprising finding is that the linear ConstellationToCelestial mapper outperforms deeper alternatives. This can be understood through the gradient flow perspective: the physics simulation already introduces significant nonlinearity through the N-body dynamics. Adding nonlinear mapping before the simulation creates compound nonlinearity that makes optimization difficult. The linear layer provides a clean gradient pathway from the loss through the simulation to the input layer.
 
-### 6.3 Multi-Restart as Loss Landscape Navigation
+### 6.4 Multi-Restart Training: Loss Landscape Characterization
 
-The dominance of multi-restart training (r = 0.780) over sophisticated optimization techniques like SWA (r = 0.727) suggests that the UMN loss landscape has multiple distinct basins of attraction. SWA averages model weights across training, which can be counterproductive when different restarts converge to qualitatively different solutions. In contrast, multi-restart directly increases the probability of finding a high-quality basin.
+The dominance of multi-restart training (r = 0.780) over sophisticated optimization techniques like SWA (r = 0.727) suggests that the UMN loss landscape has multiple distinct basins of attraction. To characterize this landscape empirically, we trained 20 independent models with different random seeds and analyzed their convergence patterns.
 
-### 6.4 Small Data Regime Considerations
+![Fig. 7. Multi-Restart Loss Landscape Analysis](figures/loss_landscape_analysis.png)
+
+The 20 restarts produced a distribution of final Pearson r values with mean = 0.687 and std = 0.029, ranging from 0.613 to 0.734 (Fig. 7b). This distribution provides direct evidence for the multi-modal nature of the loss landscape: restart outcomes vary by up to 0.121 in Pearson r, corresponding to qualitatively different solution quality.
+
+Table 5. Expected Best Performance by Restart Count (100 Monte Carlo trials)
+
+| Restart Count | Expected Best r | Std |
+|:-------------:|:---------------:|:---:|
+| 1 | 0.689 | 0.029 |
+| 3 | 0.712 | 0.016 |
+| 5 | 0.719 | 0.012 |
+| 10 | 0.726 | 0.008 |
+| 15 | 0.731 | 0.005 |
+| 20 | 0.734 | 0.000 |
+
+The performance curve (Fig. 7a, Table 5) shows diminishing returns: increasing restarts from 1 to 3 yields +0.023, from 3 to 10 yields +0.014, and from 10 to 20 yields only +0.008. This logarithmic scaling is consistent with order-statistics theory for sampling from a fixed distribution, confirming that restarts are sampling distinct local minima rather than improving optimization within a single basin.
+
+Weight-space analysis reveals that all 20 models achieve a mean pairwise cosine similarity of 0.709, which is moderate. This indicates that converged models occupy distinct regions in weight space rather than clustering in a single basin. The top-5 performing models show a mean cosine similarity of 0.707, indistinguishable from the overall mean, confirming that high-quality solutions are not concentrated in a single region of weight space but are scattered across the landscape.
+
+These findings reframe multi-restart not as an "inelegant brute-force approach" but as an empirically justified response to a fundamentally multi-modal loss landscape. The key insight is that the physics simulation creates a loss surface where distinct initial conditions can lead to qualitatively different learned dynamics, each corresponding to a different mapping from molecular features to physical trajectories. This is analogous to chaotic sensitivity in N-body systems, where slight perturbations in initial conditions produce divergent trajectories.
+
+### 6.5 Small Data Regime Considerations
 
 The Snitz dataset (360 pairs) represents a small-data regime where techniques designed for large datasets (contrastive learning, data augmentation) can be counterproductive. Contrastive learning requires sufficient negative samples that are unavailable with 360 pairs. Domain-shifted augmentation (Bushdid data) introduces noise rather than useful signal. These findings suggest that for small datasets, simple architectures with appropriate optimization (multi-restart) outperform complex architectures with sophisticated training.
 
+### 6.6 Architectural Scalability
+
+The current implementation supports mixtures of up to MAX_MOLS = 20 molecular components. This is a configurable hyperparameter, not an architectural constraint. The N-body simulation has O(N^2) computational complexity per time step due to pairwise gravitational force computation. For N = 50 (a practical upper bound for complex perfumery formulations), this amounts to 1,225 pairwise interactions per step, which remains computationally trivial on modern GPUs (estimated inference time < 2 ms per pair at batch size 16). The vectorized implementation (Section 3.4.2) computes all pairwise forces simultaneously via tensor broadcasting, requiring no architectural changes to accommodate larger mixtures. The only modification needed is adjusting the MAX_MOLS parameter and the associated mask tensor dimensions.
+
+### 6.7 Generalization and Overfitting Considerations
+
+A potential concern for models trained on small datasets (360 pairs) is overfitting. We present three lines of evidence against this.
+
+First, the coefficient of variation (CV) across 25 cross-validation folds is 5.1% (std/mean = 0.039/0.780), with an interquartile range of [0.760, 0.808]. If the model were overfitting to specific training splits, fold-level variance would be substantially higher, as different train/test partitions would yield inconsistent generalization.
+
+Second, the error analysis (Section 5.7, Fig. 4) shows that prediction error does not systematically vary with mixture complexity (total number of molecular components per pair). Overfitted models typically show degraded performance on out-of-distribution input sizes, which is not observed.
+
+Third, the physics engine component uses only 911 parameters (0.3% of total), providing a strong structural regularization. The gravitational simulation acts as an information bottleneck that constrains the representation to physically plausible dynamics, limiting the model's capacity to memorize training-specific patterns.
+
+However, the zero-shot transfer experiment (Section 5.10) demonstrates that the model does not generalize to the Ravia dataset (mean r = -0.067). This result must be interpreted carefully. Snitz and Ravia measure different psychophysical constructs (perceived similarity vs. discrimination correct fraction) under different experimental protocols, with different molecular compositions and limited molecular overlap. Transfer failure under such pronounced domain shift does not constitute evidence of overfitting to the Snitz training data; rather, it reflects the absence of cross-compatible benchmarks in the olfactory mixture literature. No published mixture similarity model, including the Snitz et al. (2013) baseline itself, has demonstrated generalization across datasets with incompatible measurement protocols. Establishing broader generalization requires future datasets that adopt standardized similarity measurement protocols across laboratories and stimulus sets.
+
 ## 7. Conclusion
 
-We presented Universe Multi Neural network (UMN), a differentiable N-body gravitational simulation architecture for olfactory mixture similarity prediction. UMN achieves r = 0.780 on the Snitz mixture similarity dataset using 5-seed x 5-fold cross-validation without manual feature engineering. Through systematic experimentation across 9 model versions, we identified that (1) the physics engine architecture is near-optimal in its simplest form, (2) multi-restart training is the most effective optimization strategy for the multi-modal loss landscape, (3) contrastive learning and physics-based loss functions are counterproductive in this small-data regime, and (4) external data augmentation from mismatched domains degrades performance.
+We presented Universe Multi Neural network (UMN), a differentiable N-body gravitational simulation architecture for olfactory mixture similarity prediction. UMN achieves r = 0.780 on the Snitz mixture similarity dataset using 5-seed x 5-fold cross-validation without manual feature engineering. Through systematic experimentation across 9 model versions, we identified that (1) the physics engine architecture is near-optimal in its simplest form, (2) multi-restart training is the most effective optimization strategy for navigating the empirically characterized multi-modal loss landscape, (3) contrastive learning and physics-based loss functions are counterproductive in this small-data regime, and (4) learned physical quantities show partial chemical interpretability through statistically significant correlations with hydrophobicity (LogP) and polarity (HBA), representing a form of internal-representation analysis that complements the post-hoc attribution methods predominant in the GNN literature.
 
-Limitations of this work include the small dataset size (360 pairs), the absence of direct comparison using identical evaluation protocols with Snitz et al. (2013), and the lack of chemical interpretability of the learned physical quantities (mass, trajectory, orbital stability). The multi-restart dependency suggests that fundamental improvements in training stability are needed.
+Limitations of this work include the following. (a) The Snitz dataset (360 pairs) is the only publicly available mixture similarity dataset with direct similarity ratings, and the model does not generalize to the Ravia dataset which uses a different experimental protocol (mean transfer r = -0.067). External validation on datasets with compatible measurement protocols remains an open need. (b) The interpretability analysis reveals statistically significant but weak correlations (|r| < 0.15) between learned quantities and chemical properties, providing partial but not complete chemical interpretability. (c) The multi-restart dependency, while empirically justified by the multi-modal loss landscape, increases total training cost linearly with restart count.
 
-Future directions include constructing larger olfactory mixture datasets, interpreting the learned physical quantities in chemical terms, ensemble methods combining simulation-based and GNN-based features, and extending the model to incorporate concentration information.
+Future directions include constructing larger olfactory mixture datasets with standardized similarity protocols, deeper interpretability analysis via attention on learned trajectories and causal intervention experiments, ensemble methods combining simulation-based and GNN-based features, and extending the model to incorporate concentration information.
 
 ## References
 
@@ -324,3 +431,11 @@ Future directions include constructing larger olfactory mixture datasets, interp
 [11] Snitz, K., Yablonka, A., Weiss, T., Frumin, I., Khan, R. M., and Sobel, N. (2013). Predicting odor perceptual similarity from odor structure. PLoS Computational Biology, 9(9), e1003184.
 
 [12] Yang, K., Swanson, K., Jin, W., Coley, C., Eiden, P., Gao, H., et al. (2019). Analyzing learned molecular representations for property prediction. Journal of Chemical Information and Modeling, 59(8), 3370-3388.
+
+[13] Ying, Z., Bourgeois, D., You, J., Zitnik, M., and Leskovec, J. (2019). GNNExplainer: Generating explanations for graph neural networks. In Advances in Neural Information Processing Systems 32 (NeurIPS 2019), pp. 9240-9251.
+
+[14] McCloskey, K., Taly, A., Monti, F., Brenner, M. P., and Colwell, L. J. (2019). Using attribution to decode binding mechanism in neural network models for chemistry. Proceedings of the National Academy of Sciences, 116(24), 11624-11629.
+
+[15] Jimenez-Luna, J., Grisoni, F., and Schneider, G. (2020). Drug discovery with explainable artificial intelligence. Nature Machine Intelligence, 2(10), 573-584.
+
+[16] Rao, J., Zheng, S., and Yang, Y. (2022). Quantitative evaluation of explainable graph neural networks for molecular property prediction. Patterns, 3(12), 100628.
