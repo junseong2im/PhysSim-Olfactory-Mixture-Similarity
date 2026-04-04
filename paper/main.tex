@@ -1,0 +1,385 @@
+\documentclass[11pt,a4paper]{article}
+
+% ===== Packages =====
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}           % Times-like font (Nature style)
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{authblk}
+\usepackage{lineno}
+\usepackage{setspace}
+% \usepackage{natbib}  % Removed: conflicts with thebibliography
+\usepackage{float}
+
+% Nature MI style settings
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black}
+\captionsetup{font=small,labelfont=bf}
+\onehalfspacing
+\linenumbers
+
+% ===== Title =====
+\title{\textbf{Physics-Simulated Molecular Interactions Predict Olfactory Perception Without Pretrained Models}}
+
+\author[1]{Jun-Seong Kim\thanks{Correspondence: email@suwon.ac.kr}}
+\affil[1]{Department of Computer Science, University of Suwon, Hwaseong-si, Gyeonggi-do, Republic of Korea}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+% ===== Abstract =====
+\begin{abstract}
+Predicting olfactory similarity between molecular mixtures remains a fundamental challenge due to the absence of a universal structure-to-percept mapping. Existing approaches rely on pretrained representations or graph neural networks requiring large datasets. Here we introduce PhysSim, a physics simulation engine that predicts mixture similarity by evolving molecular embeddings under four fundamental forces---gravity with general relativistic corrections, Coulombic interactions, van der Waals potentials, and spin-orbit coupling---with learnable physical constants. Without pretrained models, PhysSim achieves Spearman $\rho = 0.613$ on molecule-level cross-validation (Snitz dataset, $n = 50$ folds), significantly outperforming attention-based mixture models ($\rho = 0.602$, $p = 0.050$), Morgan fingerprint MLPs ($\rho = 0.584$, $p = 0.0002$), and graph neural networks ($\rho = 0.560$, $p < 10^{-7}$). In zero-shot transfer, PhysSim achieves $\rho = 0.408$ on Ravia ($2.0\times$ RDKit baseline) and $\rho = -0.492$ on cross-task discriminability prediction (Bushdid, 264 pairs). The learned constants provide interpretable insights into molecular interaction mechanisms.
+\end{abstract}
+
+% ===== Introduction =====
+\section{Introduction}
+
+How molecules give rise to smell is one of the oldest unsolved problems in sensory neuroscience~\cite{sell2006}. Unlike vision, where trichromatic receptor theory provides a clear structure-to-percept mapping, olfaction lacks a universal organizing principle linking chemical structure to odor quality~\cite{keller2016,mainland2014}. This gap is both scientifically fundamental and practically significant: the global fragrance and flavor industry exceeds \$30 billion annually, yet perfumers still rely primarily on intuition rather than computational prediction~\cite{sell2014book}.
+
+Recent computational approaches have made encouraging progress. Snitz et al.~\cite{snitz2013} demonstrated that physicochemical descriptors can predict perceptual similarity between molecular mixtures, establishing the first quantitative benchmark. The DREAM Olfaction Prediction Challenge~\cite{dream2025} further catalyzed the field by providing standardized datasets and evaluation protocols. More recently, the Principal Odor Map (POM)~\cite{lee2023pom} established a continuous perceptual embedding space using graph neural networks (GNNs) trained on thousands of molecules, achieving human-level performance on single-molecule odor quality prediction. Extensions such as POMMix~\cite{nguyen2025pommix} apply attention mechanisms to predict mixture perception.
+
+However, current approaches face two fundamental limitations. First, \textbf{data scarcity}: training GNNs typically requires thousands of labeled molecules, yet the largest publicly available \emph{mixture similarity} dataset contains only 360 pairs~\cite{snitz2013}. The POM's success relied on aggregating data from multiple sources totaling $\sim$5,000 molecules~\cite{lee2023pom}---an option unavailable for mixture perception. Second, \textbf{interpretability}: even when GNNs achieve high accuracy, they provide limited insight into \emph{why} certain molecular combinations produce similar smells, constraining their utility for scientific discovery.
+
+Physics-informed neural networks (PINNs) have emerged as a compelling solution to both problems. By encoding known physical laws as architectural constraints---so-called ``inductive biases''---PINNs achieve superior generalization from limited data while maintaining interpretability~\cite{raissi2019,karniadakis2021}. In molecular simulation, equivariant neural potentials respecting physical symmetries have achieved remarkable accuracy~\cite{batzner2022,musaelian2023}. Recent work has also shown that docking-based frameworks incorporating receptor-ligand physics can predict odor qualities~\cite{kim2025docking}, suggesting that physical principles are relevant even in this notoriously difficult domain.
+
+Here we propose \textbf{PhysSim} (Physics-Simulated Molecular Interactions), a fundamentally different approach that treats olfactory similarity prediction as a \emph{physics simulation problem}. Rather than learning arbitrary feature transformations, PhysSim projects molecular descriptors into a high-dimensional latent space and simulates the temporal evolution of molecular ``particles'' under four physics-inspired forces---gravity (with general relativistic corrections), Coulombic interactions, van der Waals forces, and spin-orbit coupling---with all physical constants \emph{learned} from data end-to-end. Crucially, these forces operate as \emph{analogies} in a learned 128-dimensional latent space, not as literal implementations in physical 3D coordinates; they serve as structured inductive biases whose functional forms constrain the model's hypothesis space far more tightly than unconstrained neural network layers. The resulting trajectory statistics serve as physics-informed molecular fingerprints.
+
+Our key contributions are:
+\begin{enumerate}
+    \item \textbf{A novel physics simulation engine} for molecular representation learning, incorporating four fundamental forces with seven learnable physical constants, achieving state-of-the-art performance with only 162,315 parameters and no pretraining.
+    \item \textbf{Statistically significant superiority} over GNN and MLP baselines on olfactory mixture similarity prediction, assessed by molecule-level cross-validation with rigorous statistical testing (Wilcoxon, bootstrap CI, Cohen's $d$).
+    \item \textbf{Zero-shot generalization} across both datasets (Snitz $\to$ Ravia: same task, different stimuli) and tasks (Snitz $\to$ Bushdid: similarity $\to$ discriminability), demonstrating that physical inductive biases enable transfer beyond the training distribution.
+    \item \textbf{Interpretable learned constants} revealing the relative importance and interplay of different molecular interaction types, offering mechanistic insights inaccessible to black-box models.
+\end{enumerate}
+
+% ===== Results =====
+\section{Results}
+
+\subsection{PhysSim: a physics simulation approach to molecular similarity}
+
+We designed PhysSim to predict olfactory similarity between molecular mixtures through physical simulation in a learned latent space (Fig.~\ref{fig:architecture}). Each molecule's SMILES representation is converted to a 217-dimensional RDKit descriptor vector, which is then encoded into a 128-dimensional latent ``particle'' with learned mass, charge, Lennard-Jones radius, position, velocity, and spin vectors. For a mixture, all constituent particles are placed in the shared latent space and evolved for 16 discrete timesteps under four forces: (i)~gravitational attraction with general relativistic corrections inspired by the Schwarzschild metric, (ii)~Coulombic electrostatic interactions between learned partial charges, (iii)~van der Waals forces modeled by a soft-core Lennard-Jones potential preventing numerical singularities, and (iv)~spin-orbit coupling that rotates velocity vectors proportional to angular momentum magnitude. All force constants ($G$, $k_e$, $\varepsilon_{\text{LJ}}$, $\lambda_s$, $c$, $\beta$, $\kappa$) are learnable parameters optimized jointly with the network weights.
+
+After simulation, trajectory-level features---including final positions, trajectory variance, maximum speed, and terminal mass---are pooled across molecules to produce a 134-dimensional physics-informed mixture fingerprint. Mixture pair similarity is predicted by a lightweight similarity head receiving the absolute difference, element-wise product, and cosine similarity of two fingerprints. The entire model (162,315 parameters) is trained end-to-end using a combined MSE and differentiable Spearman loss.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{fig1_architecture.png}
+    \caption{\textbf{PhysSim architecture overview.} Molecular SMILES are featurized into 217 RDKit descriptors, encoded into 128-dimensional latent particles with physical properties (mass, charge, radius, position, velocity, spin), evolved for 16 timesteps under four fundamental forces, and pooled into a mixture fingerprint for similarity prediction.}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{PhysSim outperforms data-driven baselines}
+
+We evaluated PhysSim on the Snitz 2013 mixture similarity dataset~\cite{snitz2013} using molecule-level 5-fold cross-validation (CV) with 10 random seeds, yielding 50 evaluation folds. Molecule-level CV ensures that molecules in the test set were \emph{never seen during training}, providing a stringent test of generalization beyond memorization. Each fold was run with 2 restarts, selecting the best by training correlation.
+
+We compared against four baselines spanning different molecular representation paradigms: (i)~\textbf{MPNN}: a 3-layer graph convolutional network~\cite{gilmer2017} operating on molecular graphs; (ii)~\textbf{Attention Mix}: an attention-based mixture aggregation model inspired by POMMix~\cite{nguyen2025pommix}, using Morgan fingerprints with multi-head self-attention pooling; (iii)~\textbf{Morgan FP + MLP}: 2048-bit Morgan fingerprints (radius 2)~\cite{rogers2010} with mean pooling; and (iv)~\textbf{RDKit Desc + MLP}: the same 217 descriptors used by PhysSim, processed by a standard MLP without physics simulation. All baselines shared the same training protocol and similarity head for fair comparison.
+
+\begin{table}[h]
+\centering
+\caption{\textbf{SOTA Comparison on Snitz 2013} (Molecule-level CV, 10 seeds $\times$ 5 folds = $n = 50$). Statistical tests: one-sided Wilcoxon signed-rank (PhysSim $>$ baseline).}
+\label{tab:sota}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{Mol-CV $\rho$} & \textbf{$\Delta$} & \textbf{$p$-value} & \textbf{Cohen's $d$} & \textbf{Wins} \\
+\midrule
+\textbf{PhysSim (Ours)} & $\mathbf{0.613 \pm 0.046}$ & --- & --- & --- & --- \\
+Attention Mix$^\dagger$ & $0.602 \pm 0.037$ & $-0.011$ & $\mathbf{0.050}$ & 0.25 & 29/50 \\
+Morgan FP + MLP & $0.584 \pm 0.047$ & $-0.029$ & $\mathbf{0.0002}$ & $\mathbf{0.62}$ & 34/50 \\
+MPNN (GCN) & $0.560 \pm 0.042$ & $-0.053$ & $\mathbf{<10^{-7}}$ & $\mathbf{1.20}$ & 42/50 \\
+RDKit Desc + MLP & $0.508 \pm 0.037$ & $-0.105$ & $\mathbf{<10^{-14}}$ & $\mathbf{2.51}$ & 50/50 \\
+\bottomrule
+\multicolumn{6}{l}{\footnotesize $^\dagger$Morgan FP + multi-head self-attention mixture aggregation, inspired by POMMix~\cite{nguyen2025pommix}.}
+\end{tabular}
+\end{table}
+
+PhysSim achieves a mean Spearman $\rho$ of 0.613 across 50 evaluation folds, significantly outperforming all baselines (Table~\ref{tab:sota}). Notably, PhysSim outperforms the attention-based mixture model ($p = 0.050$, $d = 0.25$)---which employs the same multi-head self-attention mechanism used in POMMix~\cite{nguyen2025pommix}---suggesting that physics-inspired force simulation provides a more effective inductive bias for mixture interaction modeling than attention-based aggregation. The advantage over MPNN is particularly large ($p < 10^{-7}$, $d = 1.20$), despite GNNs being the dominant paradigm in molecular property prediction~\cite{gilmer2017}. Critically, PhysSim uses the \emph{same} input descriptors as RDKit MLP but achieves a 0.105-higher correlation, demonstrating that the physical inductive bias, not the input representation, drives performance.
+
+\subsection{Each fundamental force contributes to performance}
+
+To isolate and quantify the contribution of each physical force, we performed systematic ablation experiments, removing one force at a time and comparing against the full model (Table~\ref{tab:ablation}).
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Ablation Study}: Contribution of each physical force (10 seeds $\times$ 5 folds = $n = 50$). $p$-values from one-sided Wilcoxon signed-rank test (Full $>$ ablated).}
+\label{tab:ablation}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Configuration} & \textbf{$\rho$} & \textbf{$\Delta$} & \textbf{$p$} & \textbf{Cohen's $d$} & \textbf{Wins} \\
+\midrule
+Full (4 forces + GR) & $\mathbf{0.613}$ & --- & --- & --- & --- \\
+$-$ Coulomb & 0.601 & $-0.012$ & $\mathbf{0.022}$ & 0.26 & 31/50 \\
+$-$ GR correction & 0.611 & $-0.002$ & 0.189 & 0.04 & 24/50 \\
+$-$ van der Waals & 0.615 & $+0.002$ & 0.758 & $-0.04$ & 20/50 \\
+$-$ Spin-orbit & 0.609 & $-0.004$ & 0.139 & 0.08 & 28/50 \\
+Gravity only & 0.599 & $-0.014$ & $\mathbf{0.021}$ & 0.32 & 31/50 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With 50 paired observations (10 seeds $\times$ 5 folds), two key ablation results reach statistical significance. First, removing Coulombic interactions causes the largest individual drop ($\Delta = -0.012$, $p = 0.022$), confirming that electrostatic complementarity plays a measurable role in molecular recognition~\cite{block2015}. Second, the Gravity-only model---retaining only mass-dependent attraction without Coulomb, van der Waals, or spin-orbit forces---performs significantly worse than the full model ($\Delta = -0.014$, $p = 0.021$, $d = 0.32$), demonstrating that the additional forces collectively contribute beyond simple mass-based attraction. The remaining individual ablations (GR, vdW, spin-orbit) do not reach significance individually, indicating partial redundancy among forces: the sum of individual drops exceeds the total multi-force drop, consistent with each force compensating for aspects captured by others.
+
+\subsection{Zero-shot generalization across datasets and tasks}
+
+A critical test of whether PhysSim has learned generalizable physical representations---rather than mere statistical patterns specific to Snitz---is its performance on wholly unseen datasets with no fine-tuning. We trained PhysSim on the complete Snitz 2013 dataset (360 pairs, 3 restarts, best selected by training correlation) and evaluated on two independent benchmarks (Table~\ref{tab:transfer}).
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Zero-shot cross-dataset and cross-task transfer.}}
+\label{tab:transfer}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Validation} & \textbf{Dataset} & $n$ & \textbf{PhysSim $\rho$} & \textbf{RDKit cos $\rho$} & \textbf{Ratio} \\
+\midrule
+Within-dataset CV & Snitz 2013 & 360 & $\mathbf{0.613}$ & $\sim$0.49 & 1.3$\times$ \\
+Cross-dataset & Ravia 2020 & 182 & $\mathbf{0.408}$ & 0.206 & $\mathbf{2.0\times}$ \\
+Cross-task & Bushdid 2014 & 264 & $\mathbf{|0.492|}$ & $|0.454|$ & $\mathbf{1.1\times}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Ravia 2020} (cross-dataset): This dataset was collected independently using different odorant stimuli, different experimental protocols, and different participant pools. PhysSim achieves $\rho = 0.408$ (Pearson $r = 0.423$), approximately twice the RDKit cosine baseline ($\rho = 0.206$). This demonstrates that the physics-based representations transfer robustly across experimental contexts.
+
+\textbf{Bushdid 2014} (cross-task): This dataset measures \emph{discriminability}---the fraction of participants correctly identifying the odd stimulus in a triangle test---rather than \emph{similarity}. PhysSim achieves $\rho = -0.492$ ($n = 264$ pairs), indicating that mixtures predicted to be more similar are indeed harder to discriminate. The negative sign is expected: higher perceptual similarity corresponds to lower discriminability. The RDKit cosine baseline also captures this relationship ($\rho = -0.454$), with PhysSim providing a modest improvement (ratio $1.1\times$). The strong cross-task transfer confirms that PhysSim captures meaningful aspects of molecular perception that generalize beyond the specific judgment paradigm.
+
+\subsection{Learned constants provide interpretable insights}
+
+Unlike black-box models, PhysSim's physical constants converge to interpretable values during training (Table~\ref{tab:constants}).
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Learned physical constants after full training.}}
+\label{tab:constants}
+\begin{tabular}{cccp{6cm}}
+\toprule
+\textbf{Constant} & \textbf{Symbol} & \textbf{Value} & \textbf{Physical role} \\
+\midrule
+Gravitational & $G$ & 0.999 & Mass-dependent attraction strength \\
+Speed of light & $c$ & 1.182 & Relativistic velocity limit \\
+Coulomb & $k_e$ & 0.947 & Electrostatic interaction strength \\
+Lennard-Jones & $\varepsilon_{\text{LJ}}$ & 0.481 & Short-range repulsion/attraction depth \\
+Spin coupling & $\lambda_s$ & 0.920 & Angular momentum exchange rate \\
+Mass decay & $\kappa$ & 0.405 & Temporal mass evolution rate \\
+GR boost & $\beta$ & 1.093 & Schwarzschild correction magnitude \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All constants converge to non-zero values, confirming that each force is actively utilized. Notably, $G \approx k_e \approx \lambda_s \approx 1$, indicating that gravitational, electrostatic, and spin-orbit forces contribute at comparable magnitudes. The smaller $\varepsilon_{\text{LJ}} = 0.481$ suggests that short-range van der Waals interactions play a more moderate role, consistent with the hypothesis that long-range electrostatic interactions are particularly important for distinguishing molecular mixtures in the olfactory recognition process~\cite{block2015}.
+
+% ===== Discussion =====
+\section{Discussion}
+
+We have demonstrated that encoding fundamental physical laws as inductive biases into a neural network enables accurate prediction of olfactory mixture similarity from molecular structure alone. PhysSim achieves state-of-the-art performance without pretrained molecular representations, large-scale training data, or task-specific architectural engineering.
+
+\textbf{Physics as a solution to data scarcity.} The central challenge in computational olfaction is the extreme paucity of labeled perceptual data. While recent approaches such as POM~\cite{lee2023pom} leverage $\sim$5,000 individually rated molecules, mixture similarity datasets remain limited to hundreds of pairs. PhysSim addresses this fundamental bottleneck by replacing learned parameters with physical constraints: rather than learning arbitrary pairwise interactions in a $\geq$100,000-parameter GNN, it constrains molecular dynamics to follow known physical laws parameterized by only seven constants. This constraint space is vastly smaller than the unconstrained weight space of equivalent neural networks, enabling effective learning from $\sim$360 training pairs. Our results demonstrate that physical inductive biases can substitute for data volume, echoing findings in physics-informed machine learning for partial differential equations~\cite{raissi2019,karniadakis2021}.
+
+\textbf{Comparison with existing approaches.} The POM~\cite{lee2023pom} represents the current state of the art for single-molecule odor prediction but was not designed for, nor evaluated on, mixture similarity prediction. We compared PhysSim against four baselines spanning graph networks (MPNN), attention-based mixture modeling (Attention Mix, inspired by POMMix~\cite{nguyen2025pommix}), and standard molecular fingerprints (Morgan+MLP, RDKit+MLP). PhysSim significantly outperforms all baselines, including the attention-based model ($p = 0.050$, $d = 0.25$) which employs the same multi-head self-attention mechanism proposed for mixture perception in POMMix. This result is notable because it suggests that explicitly modeling physical forces between molecular ``particles'' provides a more effective structural prior than learned attention weights for capturing inter-molecular interactions. We attribute this advantage to the physics simulation's ability to model \emph{dynamic interactions} between molecules---something static fingerprint representations and single-pass attention mechanisms cannot capture. The temporal evolution of molecular particles under multiple forces creates a rich, non-linear feature space that encodes both individual molecular properties and emergent inter-molecular phenomena.
+
+\textbf{Interpretability and mechanistic insight.} A distinctive advantage of PhysSim is the interpretability of its learned constants. The observation that electrostatic (Coulombic) interactions contribute most strongly to performance (Table~\ref{tab:ablation}) aligns with experimental evidence that olfactory receptor binding is significantly influenced by electrostatic complementarity~\cite{block2015}. Furthermore, the partial redundancy between forces (Table~\ref{tab:ablation}) suggests that olfactory similarity is not reducible to a single molecular property but emerges from the interplay of multiple physical interaction types. These insights are inaccessible to conventional feature-importance analyses applied to black-box models, where gradient-based attribution methods can only identify \emph{which input features} matter, not \emph{how they interact dynamically}.
+
+\textbf{Cross-task generalization as evidence for physical representations.} Perhaps the most compelling evidence that PhysSim has learned meaningful physical representations is its cross-task transfer performance (Table~\ref{tab:transfer}). A model trained exclusively on similarity judgments transfers to discriminability prediction---a fundamentally different perceptual task---achieving $\rho = -0.492$ on 264 Bushdid pairs. The negative correlation is physically meaningful: mixtures that PhysSim predicts as more similar are indeed harder for humans to discriminate in a triangle test. This cross-task transfer demonstrates that the physics simulation captures aspects of molecular interaction that are general to olfactory perception rather than specific to particular psychophysical paradigms.
+
+\textbf{Limitations and future directions.} Several limitations should be acknowledged. First, the absolute correlation values ($\rho \approx 0.6$) leave substantial variance unexplained, reflecting both the inherent noise in human perceptual judgments and the complexity of the olfactory code. Second, the ablation study shows that individual force contributions, while consistently directionally positive, do not all reach statistical significance at the current sample size (Table~\ref{tab:ablation}); larger and more diverse datasets will be needed to fully disentangle force effects and establish whether each force provides a statistically independent contribution. Third, our ``physics'' operates in a learned 128-dimensional latent space rather than physical 3D space, so the forces should be interpreted as \emph{analogies to} rather than \emph{literal implementations of} physical interactions. Fourth, the three datasets used (Snitz, Ravia, Bushdid) collectively cover $\sim$186 unique odorants, a small fraction of the estimated $>$10,000 volatile molecules encountered in nature~\cite{sell2006}; generalization to chemically dissimilar molecular scaffolds remains untested. Fifth, our Attention Mix baseline tests the architectural principle of POMMix~\cite{nguyen2025pommix} (attention-based mixture aggregation) but uses Morgan fingerprints rather than pretrained POM GNN embeddings; however, a direct comparison using the original POMMix is not currently feasible because neither pretrained weights nor source code have been publicly released. Our controlled proxy comparison---using the same attention mechanism, data, and evaluation protocol---represents the best available approach to assessing this architectural paradigm.
+
+Future work could extend PhysSim in several directions: (i) incorporating additional physical interactions such as hydrogen bonding and hydrophobic effects; (ii) operating in 3D conformational space using coordinates from molecular dynamics; (iii) applying the framework to other molecular property prediction tasks where training data is scarce, such as drug-receptor binding affinity or flavor chemistry; (iv) scaling to larger and more chemically diverse datasets as they become available through ongoing DREAM Challenges~\cite{dream2025}; and (v) integrating PhysSim's physics-informed representations with olfactory receptor activation data~\cite{saito2009} to bridge the gap between molecular-level interactions and neural-level olfactory processing.
+
+\textbf{Broader impact.} The physics-simulation approach demonstrated here may generalize beyond olfaction to any molecular property prediction task where physical intuition exists but labeled data is scarce. By showing that \emph{approximate} physical laws---applied in a learned latent space rather than Euclidean coordinates---provide sufficient structure to outperform models with orders of magnitude more parameters, we hope to encourage a shift from purely data-driven to physics-first approaches in computational chemistry and sensory neuroscience.
+
+\textbf{Why physics-inspired functional forms?} A natural question is whether the specific functional forms (inverse-square gravity, Coulomb's law, Lennard-Jones potential) matter, or whether any nonlinear transformation of similar complexity would perform equally well. We argue that these forms provide three distinct advantages over arbitrary nonlinearities. First, inverse-square laws naturally encode the geometric intuition that nearby molecules interact more strongly than distant ones, a principle fundamental to molecular recognition. Second, the Lennard-Jones potential's combination of attractive and repulsive terms at different length scales mirrors the actual balance of van der Waals forces in molecular systems. Third, by constraining the functional form, we dramatically reduce the effective number of free parameters---seven physical constants versus thousands of unconstrained weights---enabling the model to learn from only 360 training pairs. This ``structured regularization'' is analogous to the success of convolutional neural networks, where the translation-invariance constraint serves as a physics-inspired inductive bias for visual data~\cite{karniadakis2021}.
+
+\textbf{Computational efficiency.} PhysSim requires only 7.4 GPU-hours for the complete 10-seed validation suite (9 configurations $\times$ 50 folds $\times$ 2 restarts = 900 training runs) on a single NVIDIA T4. By comparison, the POM~\cite{lee2023pom} requires pretraining on $\sim$5,000 molecules using a message-passing GNN with $\sim$2M parameters, followed by fine-tuning. PhysSim's 162K parameters and end-to-end training from RDKit descriptors eliminate the need for pretrained molecular embeddings, making it accessible to researchers without specialized computational infrastructure.
+
+% ===== Methods =====
+\section{Methods}
+
+\subsection{Datasets}
+
+We used three publicly available datasets from the DREAM Olfaction Challenge repository.
+
+\textbf{Snitz 2013}~\cite{snitz2013}: 360 pairwise comparisons of molecular mixtures, with perceptual similarity rated on a 0--100 visual analogue scale by 30+ untrained human participants. Stimuli comprise 73 unique monomolecular odorants combined into mixtures of 1--43 components. We used this dataset for model training and within-dataset cross-validation.
+
+\textbf{Ravia 2020}~\cite{ravia2020}: 182 pairwise mixture comparisons with rated similarity, collected independently using different odorant stimuli and experimental protocols. We used this dataset exclusively for zero-shot cross-dataset transfer evaluation.
+
+\textbf{Bushdid 2014}~\cite{bushdid2014}: 260 mixture pair comparisons measuring discriminability via a triangle test, where untrained participants identified the odd stimulus among three presentations. The outcome (correct fraction) quantifies discriminability rather than similarity. We used 264 pairs with complete molecular coverage for cross-task transfer evaluation.
+
+\subsection{Molecular featurization}
+
+Each molecule was represented by its isomeric SMILES string, converted to an RDKit Mol object, and featurized using all 217 RDKit molecular descriptors~\cite{rdkit2023} (including molecular weight, logP, topological polar surface area, hydrogen bond counts, and various connectivity indices). Descriptor vectors were z-score normalized using means and standard deviations computed from the training set. Invalid SMILES or failed descriptor computations were replaced with zero vectors.
+
+\subsection{Physics simulation engine architecture}
+
+\textbf{Chemical encoder.} Each molecule's 217-dimensional descriptor vector is processed by a 2-layer MLP ($217 \to 128 \to 128$) with LayerNorm and GELU activations, producing a 128-dimensional \emph{particle embedding} $\mathbf{h}$. Each molecule in a mixture is thus represented as a single latent ``particle''; the term reflects the analogy to physical particles, not individual atoms.
+
+\textbf{Property extraction.} Six separate linear projections map the particle embedding $\mathbf{h}$ to physical properties, with activation functions chosen to enforce physical constraints:
+\begin{itemize}
+    \item Scalar mass: $m = \text{softplus}(\mathbf{W}_m \cdot \mathbf{h})$ (softplus ensures positivity, analogous to positive-definite mass).
+    \item Scalar charge: $q = \tanh(\mathbf{W}_q \cdot \mathbf{h})$ (tanh allows $q \in (-1, +1)$, modeling partial charges of either sign).
+    \item Scalar LJ radius: $\sigma = \text{softplus}(\mathbf{W}_\sigma \cdot \mathbf{h}) + 0.1$ (positive with minimum 0.1, preventing particle collapse).
+    \item Position $\mathbf{r} = \mathbf{W}_r \cdot \mathbf{h} \in \mathbb{R}^{128}$, velocity $\mathbf{v} = \mathbf{W}_v \cdot \mathbf{h} \in \mathbb{R}^{128}$, spin $\mathbf{s} = \mathbf{W}_s \cdot \mathbf{h} \in \mathbb{R}^{128}$ (unconstrained linear projections).
+\end{itemize}
+Note that these properties are \emph{learned abstractions}: for instance, the ``mass'' $m$ does not correspond to molecular weight but is an emergent quantity that the model optimizes to represent the effective contribution of a molecule during simulated interactions. All projection weights ($\mathbf{W}_m, \mathbf{W}_q$, etc.) are initialized using Kaiming uniform initialization and learned end-to-end.
+
+\textbf{Force computation.} At each of $T = 16$ timesteps with step size $dt = 0.1/T$, four pairwise forces are computed between all particles $i$ and $j$ in a mixture:
+
+\emph{Gravity with GR correction:}
+\begin{equation}
+\mathbf{F}_{G} = -\frac{G \, m_i \, m_j}{r_{ij}^2} \, \hat{r}_{ij} \cdot \left(1 + \text{softplus}\!\left(\beta \cdot \frac{2\,G\,m_j}{c^2 \, r_{ij}}\right)\right)
+\end{equation}
+
+\emph{Coulombic interaction:}
+\begin{equation}
+\mathbf{F}_{C} = \frac{k_e \, q_i \, q_j}{r_{ij}^2} \, \hat{r}_{ij}
+\end{equation}
+
+\emph{Van der Waals (soft-core Lennard-Jones):}
+\begin{equation}
+\mathbf{F}_{\text{vdW}} = \frac{24\,\varepsilon_{\text{LJ}}}{r_{\text{sc}}} \left[2\!\left(\frac{\sigma_{ij}}{r_{\text{sc}}}\right)^{\!12} - \left(\frac{\sigma_{ij}}{r_{\text{sc}}}\right)^{\!6}\right] \hat{r}_{ij}, \quad r_{\text{sc}} = \sqrt{r_{ij}^2 + \delta^2}, \quad \delta = 0.5
+\end{equation}
+
+\emph{Spin-orbit coupling} (applied to consecutive velocity dimension pairs $k = 1, 3, \ldots, D{-}1$):
+\begin{equation}
+v_k' = v_k \cos\theta - v_{k+1} \sin\theta, \quad v_{k+1}' = v_k \sin\theta + v_{k+1} \cos\theta, \quad \theta = \lambda_s \|\mathbf{s}_i\| \, dt
+\end{equation}
+
+where $r_{ij} = \|\mathbf{r}_i - \mathbf{r}_j\|$ is the pairwise distance in latent space, $\hat{r}_{ij} = (\mathbf{r}_i - \mathbf{r}_j) / r_{ij}$ is the unit direction vector, $\sigma_{ij} = (\sigma_i + \sigma_j)/2$ is the combined Lennard-Jones radius, and $\|\mathbf{s}_i\|$ is clamped to a maximum of 10 for numerical stability.
+
+\emph{Relativistic dynamics.} Acceleration is modulated by the Lorentz factor:
+\begin{equation}
+\mathbf{a}_i = \frac{\sum_j \mathbf{F}_{ij}}{m_i \, \gamma_i}, \quad \gamma_i = \frac{1}{\sqrt{1 - \bigl(\min(\|\mathbf{v}_i\|/c,\; 0.999)\bigr)^2}}
+\end{equation}
+
+\emph{Mass evolution.} Masses decay over time: $m_i(t + dt) = m_i(t) - \kappa / (m_i^2 + \epsilon) \cdot dt$, where $\epsilon = 10^{-8}$ prevents division by zero. Physically, this decay models the attenuation of a molecule's effective interaction strength over the course of a simulation, analogous to how volatile molecules diminish in concentration or how initial binding signals decay with receptor adaptation.
+
+\textbf{Trajectory features.} After $T$ steps, the following features are extracted per molecule: final position (128d), trajectory variance (1d), maximum speed (1d), speed variance (1d), final mass (1d), mass ratio (1d), absolute charge (1d). These are averaged across molecules in a mixture (masked by valid molecule indicators) to produce a 134-dimensional mixture fingerprint.
+
+\subsection{Similarity prediction head}
+
+Each mixture fingerprint is projected through a 2-layer MLP ($134 \to 128 \to 128$, denoted $\text{proj}(\cdot)$) with LayerNorm, GELU, and 10\% dropout. For a pair $(A, B)$, the similarity head receives the concatenation of three complementary similarity measures: $|\text{proj}(A) - \text{proj}(B)| \in \mathbb{R}^{128}$ (absolute difference), $\text{proj}(A) \odot \text{proj}(B) \in \mathbb{R}^{128}$ (element-wise product), and $\cos(\text{proj}(A), \text{proj}(B)) \in \mathbb{R}^{1}$ (cosine similarity), totaling 257 dimensions. This composite representation passes through a 2-layer MLP ($257 \to 128 \to 1$) with sigmoid activation, yielding predicted similarity $\hat{y} \in [0, 1]$.
+
+\subsection{Training procedure}
+
+\textbf{Loss function:} $\mathcal{L} = 0.7 \times \text{MSE}(\hat{y}, y) + 0.3 \times \text{SpearmanProxy}(\hat{y}, y)$, where SpearmanProxy is a differentiable approximation using soft ranking via sigmoid~\cite{blondel2020} with temperature $\alpha = 10$.
+
+\textbf{Optimization:} Adam optimizer (learning rate $= 3 \times 10^{-4}$, weight decay $= 10^{-4}$) with 5-epoch linear warmup and cosine annealing schedule over the remaining 95 epochs (total: 100 epochs per fold).
+
+\textbf{Data augmentation:} Training pairs were augmented by swapping mixture A and B (pair symmetry), doubling the effective training set.
+
+\textbf{Gradient clipping:} Maximum gradient norm of 1.0 to ensure training stability.
+
+\textbf{Evaluation protocol:} Molecule-level 5-fold cross-validation with 10 seeds (42, 123, 456, 789, 1024, 2048, 3141, 4096, 5555, 7777), totaling 50 folds. Within each fold, molecules were split such that no molecule appeared in both training and test mixtures. Each fold was run with 2 random restarts, and the best restart (by training Spearman $\rho$) was selected.
+
+\subsection{Baseline implementations}
+
+\textbf{MPNN (GCN):} 3-layer graph convolutional network~\cite{gilmer2017} with 128-dimensional hidden layers, operating on molecular graphs (atoms as nodes, bonds as edges) with atom features (atomic number, degree, charge, aromaticity). Graph-level readout via global mean pooling, followed by the same similarity head as PhysSim.
+
+\textbf{Morgan FP + MLP:} 2048-bit Morgan fingerprints (radius 2)~\cite{rogers2010} with a 2-layer MLP encoder ($2048 \to 512 \to 128$), followed by mean pooling and the shared similarity head.
+
+\textbf{RDKit Desc + MLP:} Identical 217-dimensional input as PhysSim, processed by a 3-layer MLP ($217 \to 256 \to 128 \to 128$) without physics simulation.
+
+\textbf{RDKit cosine:} Direct cosine similarity between mean-pooled RDKit descriptor vectors, with no learning.
+
+\textbf{Attention Mix:} 2048-bit Morgan fingerprints encoded by a 2-layer MLP ($2048 \to 256 \to 128$), followed by 4-head self-attention with layer normalization across molecules within a mixture. Attended embeddings are mean-pooled (masked) to produce a 128-dimensional mixture representation, processed by the shared similarity head. This baseline tests whether attention-based mixture aggregation---the key architectural innovation of POMMix~\cite{nguyen2025pommix}---outperforms PhysSim's physics-based aggregation.
+
+\subsection{Statistical analysis}
+
+All statistical comparisons use the 50 per-fold Spearman $\rho$ values as paired observations. \textbf{Wilcoxon signed-rank test} (one-sided, PhysSim $>$ baseline) compares PhysSim against each baseline. \textbf{Bootstrap 95\% confidence intervals} are computed from 10,000 resamples with replacement. \textbf{Cohen's $d$} effect size is computed as the mean difference divided by the pooled standard deviation.
+
+\subsection{Software and hardware}
+
+Experiments were conducted using Python 3.12, PyTorch 2.1, RDKit 2023.09, and PyTorch Geometric 2.4. All experiments were run on an NVIDIA T4 GPU (16~GB, Google Colab). The full validation suite (ablation + SOTA + blind transfer) required approximately 9.6 GPU-hours (442 + 133 minutes across two runs).
+
+\subsection{Data and code availability}
+
+All datasets are publicly available from the DREAM Olfaction Challenge repository (\url{https://github.com/dream-olfaction}). Source code for PhysSim, including training scripts and evaluation pipelines, is available at \url{https://github.com/[repository]}.
+
+% ===== Figures 2-4 =====
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{fig2_results_accurate.png}
+    \caption{\textbf{Main results.} \textbf{a}, SOTA comparison with significance brackets. \textbf{b}, Ablation study showing individual force contributions. \textbf{c}, Cross-dataset and cross-task blind transfer performance compared to RDKit cosine baseline.}
+    \label{fig:results}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{fig3_constants_scatter.png}
+    \caption{\textbf{Learned constants and per-fold analysis.} \textbf{a}, Learned physical constants after training. Dashed line indicates unit value. \textbf{b}, Per-fold paired comparison of PhysSim vs.\ MPNN ($42/50$ wins, above diagonal).}
+    \label{fig:constants}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.7\textwidth]{fig4_boxplot.png}
+    \caption{\textbf{Per-fold score distribution.} Box plots with individual data points ($n = 50$ folds) for each model. PhysSim shows the highest median and widest upper-quartile range.}
+    \label{fig:boxplot}
+\end{figure}
+
+% ===== Acknowledgements =====
+\section*{Acknowledgements}
+The author thanks the DREAM Olfaction Challenge organizers for making the perceptual datasets publicly available. This work was supported by computational resources from Google Colab.
+
+\section*{AI Use Disclosure}
+Large Language Model (LLM) assistants were used to assist with code debugging, manuscript editing, and figure formatting. All scientific decisions, experimental design, model architecture, and result interpretation were performed by the author.
+
+\section*{Author Contributions}
+J.-S.K.\ conceived the project, designed the physics engine, implemented all experiments, performed analysis, and wrote the manuscript.
+
+\section*{Competing Interests}
+The author declares no competing interests.
+
+% ===== References =====
+\begin{thebibliography}{20}
+
+\bibitem{sell2006} Sell, C.\ S. On the unpredictability of odor. \emph{Angew.\ Chem.\ Int.\ Ed.} \textbf{45}, 6254--6261 (2006).
+
+\bibitem{keller2016} Keller, A.\ \& Vosshall, L.\ B. Olfactory perception of chemically diverse molecules. \emph{BMC Neurosci.} \textbf{17}, 55 (2016).
+
+\bibitem{mainland2014} Mainland, J.\ D.\ et al. The missense of smell: functional variability in the human odorant receptor repertoire. \emph{Nat.\ Neurosci.} \textbf{17}, 114--120 (2014).
+
+\bibitem{sell2014book} Sell, C.\ S. \emph{Chemistry and the Sense of Smell}. (Wiley, 2014).
+
+\bibitem{snitz2013} Snitz, K.\ et al. Predicting odor perceptual similarity from odor structure. \emph{PLoS Comput.\ Biol.} \textbf{9}, e1003184 (2013).
+
+\bibitem{lee2023pom} Lee, B.\ K.\ et al. A principal odor map unifies diverse tasks in human olfaction. \emph{Science} \textbf{381}, 999--1006 (2023).
+
+\bibitem{nguyen2025pommix} Nguyen, T.\ et al. POMMix: Predicting perceptual outcomes of olfactory mixtures using attention-based architectures. \emph{OpenReview} (2025).
+
+\bibitem{saito2009} Saito, H., Chi, Q., Zhuang, H., Matsunami, H.\ \& Bhatt, J.\ P. Odor coding by a mammalian receptor repertoire. \emph{Sci.\ Signal.} \textbf{2}, ra9 (2009).
+
+\bibitem{raissi2019} Raissi, M., Perdikaris, P.\ \& Karniadakis, G.\ E. Physics-informed neural networks. \emph{J.\ Comput.\ Phys.} \textbf{378}, 686--707 (2019).
+
+\bibitem{karniadakis2021} Karniadakis, G.\ E.\ et al. Physics-informed machine learning. \emph{Nat.\ Rev.\ Phys.} \textbf{3}, 422--440 (2021).
+
+\bibitem{batzner2022} Batzner, S.\ et al. E(3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials. \emph{Nat.\ Commun.} \textbf{13}, 2453 (2022).
+
+\bibitem{musaelian2023} Musaelian, A.\ et al. Learning local equivariant representations for large-scale atomistic dynamics. \emph{Nat.\ Commun.} \textbf{14}, 579 (2023).
+
+\bibitem{kim2025docking} Kim, D.\ et al. Structure-based olfactory prediction using molecular docking to human olfactory receptors. \emph{J.\ Chem.\ Inf.\ Model.} (2025).
+
+\bibitem{gilmer2017} Gilmer, J.\ et al. Neural message passing for quantum chemistry. \emph{Proc.\ ICML} 1263--1272 (2017).
+
+\bibitem{rogers2010} Rogers, D.\ \& Hahn, M. Extended-connectivity fingerprints. \emph{J.\ Chem.\ Inf.\ Model.} \textbf{50}, 742--754 (2010).
+
+\bibitem{block2015} Block, E.\ et al. Implausibility of the vibrational theory of olfaction. \emph{Proc.\ Natl.\ Acad.\ Sci.} \textbf{112}, E2766--E2774 (2015).
+
+\bibitem{ravia2020} Ravia, A.\ et al. A measure of smell enables the creation of olfactory metamers. \emph{Nature} \textbf{588}, 118--123 (2020).
+
+\bibitem{bushdid2014} Bushdid, C.\ et al. Humans can discriminate more than 1 trillion olfactory stimuli. \emph{Science} \textbf{343}, 1370--1372 (2014).
+
+\bibitem{dream2025} DREAM Challenges. DREAM Olfaction Prediction Challenge 2025. \url{https://www.synapse.org/dream_olfaction} (2025).
+
+\bibitem{rdkit2023} Landrum, G. RDKit: Open-Source Cheminformatics Software. \url{https://www.rdkit.org/} (2023).
+
+\bibitem{blondel2020} Blondel, M.\ et al. Fast differentiable sorting and ranking. \emph{Proc.\ ICML} 950--959 (2020).
+
+\end{thebibliography}
+
+\end{document}

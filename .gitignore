@@ -24,9 +24,34 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Submission packages (keep in repo for reproducibility)
-# submission/
-
 # Temp
 /tmp/
 arxiv_submission/
+
+# Model checkpoints (too large for git)
+experiments/best_model_*.pt
+experiments/*.zip
+experiments/_*.py
+experiments/_*.txt
+
+# Colab instructions
+experiments/*_colab_instructions.txt
+
+# Analysis scripts (local only)
+experiments/analyze_*.py
+
+# Paper build artifacts
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+
+# Submission packages
+submission/
+
+# Data (available from DREAM repository)
+data/

@@ -1,145 +1,172 @@
-# UMN: Universe Multi Neural Network
+# PhysSim: Physics-Simulated Molecular Interactions Predict Olfactory Perception Without Pretrained Models
 
-**Olfactory Mixture Similarity Prediction via Differentiable N-body Simulation**
+Jun-Seong Kim, University of Suwon
 
-Junseong Kim, University of Suwon
-
-[![Paper](https://img.shields.io/badge/Paper-ChemRxiv-blue)](https://doi.org/10.26434/chemrxiv.15001285/v1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
 
 ## Overview
 
-UMN (Universe Multi Neural network) is a physics-simulation-based deep learning architecture for predicting perceptual similarity between olfactory mixtures. Unlike existing GNN-based approaches, UMN maps molecular fingerprints to celestial bodies with learnable mass, position, and velocity, performs differentiable N-body gravitational simulation, and extracts orbital stability features as mixture-level representations.
+PhysSim is a physics simulation engine that predicts olfactory mixture similarity by evolving molecular embeddings under four fundamental forces in a learned latent space. Unlike GNN-based approaches that require pretrained molecular representations and large datasets, PhysSim encodes physical laws as inductive biases, enabling effective learning from only 360 training pairs with 162K parameters.
 
-UMN achieves Pearson r = 0.780 (std = 0.039) on the Snitz et al. (2013) mixture similarity dataset using 5-seed x 5-fold cross-validation without any manual feature engineering.
+The four simulated forces are:
 
-![Architecture](figures/architecture.png)
+- Gravity with general relativistic (Schwarzschild) corrections
+- Coulombic electrostatic interactions
+- Van der Waals forces via a soft-core Lennard-Jones potential
+- Spin-orbit coupling
 
-## Key Results
+All seven physical constants are learned end-to-end from data.
 
-| Method | Pearson r | Evaluation | Description |
-|--------|:---------:|:----------:|-------------|
-| Snitz et al. (2013) optimized | 0.85 | Train/Test split | 21 hand-selected from 1433 descriptors |
-| **UMN (ours)** | **0.780** | **5-seed x 5-fold CV** | **End-to-end, no feature engineering** |
-| Snitz et al. (2013) simple | >= 0.49 | Train/Test split | Single structural vector, no feature selection |
-| Tanimoto Similarity | 0.439 | Full data | Average pairwise Tanimoto similarity |
+
+## Results
+
+### SOTA comparison (Snitz 2013, molecule-level CV, n = 50 folds)
+
+| Model | Spearman rho | Delta | p-value | Cohen's d | Wins |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| PhysSim (ours) | 0.613 +/- 0.046 | --- | --- | --- | --- |
+| Attention Mix | 0.602 +/- 0.037 | -0.011 | 0.050 | 0.25 | 29/50 |
+| Morgan FP + MLP | 0.584 +/- 0.047 | -0.029 | 0.0002 | 0.62 | 34/50 |
+| MPNN (GCN) | 0.560 +/- 0.042 | -0.053 | <1e-7 | 1.20 | 42/50 |
+| RDKit Desc + MLP | 0.508 +/- 0.037 | -0.105 | <1e-14 | 2.51 | 50/50 |
+
+Attention Mix uses Morgan fingerprints with multi-head self-attention mixture aggregation, inspired by POMMix (Nguyen et al., 2025).
+
+### Zero-shot transfer
+
+| Validation | Dataset | n | PhysSim rho | RDKit cos rho | Ratio |
+|:---|:---|:---:|:---:|:---:|:---:|
+| Within-dataset CV | Snitz 2013 | 360 | 0.613 | ~0.49 | 1.3x |
+| Cross-dataset | Ravia 2020 | 182 | 0.408 | 0.206 | 2.0x |
+| Cross-task | Bushdid 2014 | 264 | -0.492 | -0.454 | 1.1x |
+
+### Ablation study (n = 50 folds)
+
+| Configuration | rho | Delta | p | d |
+|:---|:---:|:---:|:---:|:---:|
+| Full (4 forces + GR) | 0.613 | --- | --- | --- |
+| - Coulomb | 0.601 | -0.012 | 0.022 | 0.26 |
+| Gravity only | 0.599 | -0.014 | 0.021 | 0.32 |
+
+Coulombic interactions provide the largest unique contribution, consistent with the role of electrostatic complementarity in olfactory receptor binding.
+
 
 ## Architecture
 
-UMN consists of three modules:
+```
+SMILES --> RDKit descriptors (217d)
+       --> Chemical encoder (MLP, 217 -> 128)
+       --> Property extraction (mass, charge, radius, position, velocity, spin)
+       --> Physics simulation (16 timesteps, 4 forces, 7 learnable constants)
+       --> Trajectory features (134d mixture fingerprint)
+       --> Similarity head (|diff|, product, cosine -> MLP -> sigmoid)
+```
 
-1. **InputHardwareLayer**: Maps 2048-dim Morgan fingerprints to 128-dim atom vectors via grid mapping and channel transformation
-2. **PhysicsProcessingEngine**: Performs differentiable N-body gravitational simulation
-   - ConstellationToCelestial: Linear projection to mass (1D), position (3D), velocity (3D)
-   - GravitationalEngine: Verlet integration with learnable gravitational constant
-   - OrbitalStabilityEvaluator: Extracts 20D physics embeddings from trajectories
-3. **SimilarityHead**: Predicts similarity from absolute difference of projected embeddings
+The simulation operates in a learned 128-dimensional latent space. Forces serve as structured inductive biases whose functional forms constrain the model's hypothesis space far more tightly than unconstrained neural network layers.
+
 
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/junseong2im/UMN.git
-cd UMN
+git clone https://github.com/junseong2im/UMN-GR-Modeling-Olfactory-Mixture-Perception-via-General-Relativistic-N-body-Simulation.git
+cd UMN-GR-Modeling-Olfactory-Mixture-Perception-via-General-Relativistic-N-body-Simulation
 
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # or: venv\Scripts\activate  # Windows
 
-# Install dependencies
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install rdkit-pypi scipy scikit-learn pandas numpy matplotlib
+pip install rdkit-pypi scipy scikit-learn pandas numpy matplotlib torch-geometric
 ```
 
 ### Requirements
+
 - Python >= 3.10
 - PyTorch >= 2.0 (CUDA recommended)
 - RDKit
+- PyTorch Geometric
 - NumPy, SciPy, Scikit-learn, Pandas
 
-## Repository Structure
+
+## Repository structure
 
 ```
-UMN/
-├── models/                          # Core model modules
-│   ├── olfabind_engine.py          # Physics engine (GravitationalEngine, OrbitalStabilityEvaluator)
-│   ├── olfabind_input.py           # InputHardwareLayer
-│   ├── olfabind_pipeline.py        # Full model pipeline
-│   ├── olfabind_contrastive.py     # Contrastive learning module (v19-v21)
-│   └── olfabind_ghost.py           # Ghost molecule augmentation
-├── experiments/                     # Experiment scripts (v17-v25)
-│   ├── v17_olfabind_validation.py  # Initial validation
-│   ├── v18_olfabind_validation.py  # T-sweep + multi-restart baseline
-│   ├── v19_contrastive_validation.py
-│   ├── v20_triplet_physics_validation.py
-│   ├── v21_enhanced_triplet.py
-│   ├── v22_physics_native.py       # Physics-based loss (HNN, PINN)
-│   ├── v23_freedom_stability.py    # Multi-scale simulation
-│   ├── v24_internal_improvement.py # Internal mapper replacement
-│   └── v25_optimization_trio.py    # Final optimization comparison
+PhysSim/
+├── models/
+│   ├── olfabind_engine.py           # Physics engine (forces, simulation loop)
+│   ├── olfabind_input.py            # Chemical encoder and property extraction
+│   ├── olfabind_pipeline.py         # Full model pipeline
+│   ├── olfabind_contrastive.py      # Contrastive learning module
+│   └── olfabind_ghost.py            # Ghost molecule augmentation
+├── experiments/
+│   ├── v38_extended_validation.py   # 10-seed ablation and SOTA (n=50)
+│   └── v39_final_experiments.py     # MPNN, AttnMix, Bushdid transfer
+├── paper/
+│   ├── main.tex                     # LaTeX source
+│   ├── supplementary_information.md # Supplementary tables and notes
+│   └── PhysSim_Olfactory_Prediction.pdf
 ├── results/                         # Experiment results (JSON)
 ├── figures/                         # Paper figures
-├── paper.tex                        # LaTeX source
-├── UMN.pdf                         # Compiled paper
-└── README.md                       # This file
+└── README.md
 ```
 
-## Experiments
 
-We conducted systematic experiments across 9 model versions (v17-v25):
+## Running experiments
 
-| Version | Method | Pearson r | Std |
-|---------|--------|:---------:|:---:|
-| v25 baseline | Original + 10-restart | **0.780** | 0.039 |
-| v25-C | HP grid search | 0.732 | 0.038 |
-| v25-A | +SWA, warmup | 0.727 | 0.037 |
-| v18 | Original + 3-restart | 0.680 | - |
-| v19 | +InfoNCE contrastive | 0.594 | 0.085 |
-| v22 | +Physics-based loss | 0.532 | 0.119 |
-| v24 | +MLP mapper | 0.440 | 0.090 |
-
-### Key Findings
-1. The physics engine architecture is near-optimal in its simplest form
-2. Multi-restart training is the most effective optimization strategy
-3. Contrastive learning and physics-based losses degrade performance in small-data regimes
-4. Learned physical quantities show partial chemical interpretability (LogP: r=+0.141, HBA: r=-0.148)
-
-## Running Experiments
+All experiments run on Google Colab (T4 GPU). Training scripts are self-contained.
 
 ```bash
-# Run the best-performing configuration (v25 baseline, 10-restart)
-python experiments/v25_optimization_trio.py
+# 10-seed ablation and SOTA comparison (~7.4 GPU-hours)
+python experiments/v38_extended_validation.py
 
-# Results are saved to results/v25_optimization_trio.json
+# MPNN, Attention Mix, and Bushdid transfer (~2.2 GPU-hours)
+python experiments/v39_final_experiments.py
 ```
 
-## Dataset
+Results are saved as JSON files in the results directory.
 
-This research uses the following publicly available datasets:
 
-- **Snitz et al. (2013)**: 360 mixture pairs with perceptual similarity ratings (primary training data)
-- **Ravia et al. (2020)**: 50 mixture pairs (zero-shot transfer evaluation)
-- **Bushdid et al. (2014)**: 6,864 discrimination data (augmentation attempt, found ineffective)
+## Datasets
+
+All datasets are publicly available from the DREAM Olfaction Challenge repository.
+
+- Snitz et al. (2013): 360 mixture pairs with perceptual similarity ratings. Primary training and CV data.
+- Ravia et al. (2020): 182 mixture pairs. Zero-shot cross-dataset transfer evaluation.
+- Bushdid et al. (2014): 264 mixture pairs measuring discriminability. Zero-shot cross-task transfer evaluation.
+
+
+## Learned physical constants
+
+| Constant | Symbol | Value |
+|:---|:---:|:---:|
+| Gravitational | G | 0.999 |
+| Speed of light | c | 1.182 |
+| Coulomb | k_e | 0.947 |
+| Lennard-Jones | eps_LJ | 0.481 |
+| Spin coupling | lambda_s | 0.920 |
+| Mass decay | kappa | 0.405 |
+| GR boost | beta | 1.093 |
+
 
 ## Citation
 
-If you use this code or find our work useful, please cite:
-
 ```bibtex
-@article{kim2026umn,
-  title={UMN: Universe Multi Neural Network for Olfactory Mixture Similarity Prediction via Differentiable N-body Simulation},
-  author={Kim, Junseong},
+@article{kim2026physsim,
+  title={Physics-Simulated Molecular Interactions Predict Olfactory Perception Without Pretrained Models},
+  author={Kim, Jun-Seong},
   journal={ChemRxiv preprint},
-  year={2026},
-  doi={10.26434/chemrxiv-2026-XXXXX}
+  year={2026}
 }
 ```
 
+
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
 
 ## Acknowledgments
 
-This work uses the Snitz et al. (2013) mixture similarity dataset from the DREAM Olfaction Challenge. We thank the original authors for making their data publicly available.
+This work uses datasets from the DREAM Olfaction Challenge. We thank the original authors for making their data publicly available. Computational resources were provided by Google Colab.

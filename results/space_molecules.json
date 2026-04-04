@@ -1,0 +1,18 @@
+{
+  "Ethanol (Sagittarius B2)": "CCO",
+  "Methanol (Orion Nebula)": "CO",
+  "Formaldehyde (ISM)": "C=O",
+  "Acetaldehyde (Sagittarius B2)": "CC=O",
+  "Dimethyl Ether (Orion)": "COC",
+  "Ethylene Glycol (Sagittarius B2)": "OCCO",
+  "Vinyl Alcohol (Sagittarius B2)": "C=CO",
+  "Glycolaldehyde (Sagittarius B2)": "OCC=O",
+  "Acetic Acid (Sagittarius B2)": "CC(=O)O",
+  "Benzene (CRL 618)": "c1ccccc1",
+  "Hydrogen Cyanide (Titan)": "C#N",
+  "Acetonitrile (Titan/ISM)": "CC#N",
+  "Propionitrile (Titan)": "CCC#N",
+  "Acrylonitrile (Titan)": "C=CC#N",
+  "Ethane (Titan)": "CC",
+  "Propane (Titan)": "CCC"
+}
