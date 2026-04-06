@@ -1,6 +1,8 @@
 # PhysSim: Physics-Simulated Molecular Interactions Predict Olfactory Perception Without Pretrained Models
 
-Jun-Seong Kim, University of Suwon
+Junseong Kim, University of Suwon
+
+Preprint: https://doi.org/10.26434/chemrxiv.15001664/v1
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
